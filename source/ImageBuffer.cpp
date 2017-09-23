@@ -203,8 +203,8 @@ namespace {
 		png_read_update_info(png.get(), info);
 		
 		// Read the file.
-		unique_ptr<ImageBuffer> buffer(new ImageBuffer(width, height));
-		vector<png_byte *> rows(height, nullptr);
+		volatile unique_ptr<ImageBuffer> buffer(new ImageBuffer(width, height));
+		volatile vector<png_byte *> rows(height, nullptr);
 		for(int y = 0; y < height; ++y)
 			rows[y] = reinterpret_cast<png_byte *>(buffer->Begin(y));
 		
