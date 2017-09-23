@@ -19,6 +19,7 @@ PARTICULAR PURPOSE.  See the GNU General Public License for more details.
 
 #include <cstdio>
 #include <vector>
+#include <memory>
 
 using namespace std;
 
@@ -163,60 +164,55 @@ namespace {
 			return nullptr;
 		
 		// Set up libpng.
-		png_struct *png = png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr);
+		png_info *info = nullptr;
+		auto deleter = [&info](png_struct *png){
+			png_destroy_read_struct(&png, !info ? nullptr : &info, nullptr);
+		};
+		unique_ptr<png_struct, decltype(deleter)> png(png_create_read_struct(PNG_LIBPNG_VER_STRING, nullptr, nullptr, nullptr), deleter);
 		if(!png)
 			return nullptr;
 		
-		png_info *info = png_create_info_struct(png);
+		info = png_create_info_struct(png.get());
 		if(!info)
-		{
-			png_destroy_read_struct(&png, nullptr, nullptr);
 			return nullptr;
-		}
 		
-		ImageBuffer *buffer = nullptr;
-		if(setjmp(png_jmpbuf(png)))
-		{
-			png_destroy_read_struct(&png, &info, nullptr);
-			delete buffer;
+		if(setjmp(png_jmpbuf(png.get())))
 			return nullptr;
-		}
 		
-		png_init_io(png, file);
-		png_set_sig_bytes(png, 0);
+		png_init_io(png.get(), file);
+		png_set_sig_bytes(png.get(), 0);
 		
-		png_read_info(png, info);
-		int width = png_get_image_width(png, info);
-		int height = png_get_image_height(png, info);
+		png_read_info(png.get(), info);
+		int width = png_get_image_width(png.get(), info);
+		int height = png_get_image_height(png.get(), info);
 		if(!width || !height)
 			return nullptr;
 		
 		// Adjust settings to make sure the result will be a BGRA file.
-		int colorType = png_get_color_type(png, info);
-		int bitDepth = png_get_bit_depth(png, info);
+		int colorType = png_get_color_type(png.get(), info);
+		int bitDepth = png_get_bit_depth(png.get(), info);
 		
-		png_set_strip_16(png);
-		png_set_packing(png);
+		png_set_strip_16(png.get());
+		png_set_packing(png.get());
 		if(colorType == PNG_COLOR_TYPE_PALETTE)
-			png_set_palette_to_rgb(png);
+			png_set_palette_to_rgb(png.get());
 		if(colorType == PNG_COLOR_TYPE_GRAY && bitDepth < 8)
-			png_set_expand_gray_1_2_4_to_8(png);
+			png_set_expand_gray_1_2_4_to_8(png.get());
 		if(colorType & PNG_COLOR_MASK_COLOR)
-			png_set_bgr(png);
-		png_read_update_info(png, info);
+			png_set_bgr(png.get());
+		png_read_update_info(png.get(), info);
 		
 		// Read the file.
-		buffer = new ImageBuffer(width, height);
+		unique_ptr<ImageBuffer> buffer(new ImageBuffer(width, height));
 		vector<png_byte *> rows(height, nullptr);
 		for(int y = 0; y < height; ++y)
 			rows[y] = reinterpret_cast<png_byte *>(buffer->Begin(y));
 		
-		png_read_image(png, &rows.front());
+		png_read_image(png.get(), &rows.front());
 		
 		// Clean up. The file will be closed automatically.
-		png_destroy_read_struct(&png, &info, nullptr);
 		
-		return buffer;
+		return buffer.release();
 	}
 	
 	
